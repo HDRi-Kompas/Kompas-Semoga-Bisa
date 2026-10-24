@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KOMPAS - Audit Metadata & Penilaian Aset Spasial Kelautan</title>
+
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    #map { height: 350px; border-radius: 0.75rem; z-index: 10; }
+    .nav-active { border-bottom: 2px solid #0284c7; color: #0284c7; font-weight: 600; }
+    
+    /* PRINT OPTIMIZATION */
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; color: black; font-size: 11px; }
+      #view-audit { display: block !important; }
+      #map { height: 250px !important; page-break-inside: avoid; }
+      .shadow-sm, .shadow-lg { box-shadow: none !important; border: 1px solid #cbd5e1 !important; }
+      .page-break { page-break-before: always; }
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- TOP HEADER / NAVBAR -->
+  <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="bg-sky-500 text-white p-2 rounded-lg font-bold flex items-center justify-center shadow-lg shadow-sky-500/30">
+          <i class="fa-solid fa-compass text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight flex items-center gap-2">
+            KOMPAS <span class="bg-sky-500/20 text-sky-400 text-xs px-2 py-0.5 rounded border border-sky-500/30 font-normal">v1.3 Final</span>
+          </h1>
+          <p class="text-xs text-slate-400">Kajian Otomatis Metadata & Penilaian Aset Spasial Kelautan</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-3">
+        <button onclick="toggleMethodologyModal(true)" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-3 py-2 rounded-lg border border-slate-700 transition flex items-center gap-2">
+          <i class="fa-solid fa-book"></i> Metodologi
+        </button>
+        <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700 transition flex items-center gap-2">
+          <i class="fa-solid fa-print"></i> Cetak PDF
+        </button>
+        <button onclick="exportJSONAudit()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow flex items-center gap-2">
+          <i class="fa-solid fa-download"></i> Ekspor JSON
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="bg-white border-b border-slate-200 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-8 text-sm">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="py-4 nav-active transition flex items-center gap-2">
+        <i class="fa-solid fa-chart-pie"></i> Ringkasan Benchmark
+      </button>
+      <button onclick="switchTab('audit')" id="tab-audit" class="py-4 text-slate-500 hover:text-slate-800 transition flex items-center gap-2">
+        <i class="fa-solid fa-list-check"></i> Audit & Upload Manual
+      </button>
+      <button onclick="switchTab('settings')" id="tab-settings" class="py-4 text-slate-500 hover:text-slate-800 transition flex items-center gap-2">
+        <i class="fa-solid fa-sliders"></i> Pengaturan Bobot MQI
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+
+    <!-- VIEW 1: DASHBOARD BENCHMARK -->
+    <div id="view-dashboard" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Total Dataset Diaudit</div>
+          <div class="text-3xl font-extrabold text-slate-900" id="kpi-total">12</div>
+          <div class="text-xs text-slate-500 mt-2 flex items-center gap-1">
+            <span class="text-emerald-600 font-medium"><i class="fa-solid fa-layer-group"></i> 5 Tema</span> Kelautan Indonesia
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Rata-rata Skor MQI</div>
+          <div class="text-3xl font-extrabold text-sky-600" id="kpi-avg-score">68.4 <span class="text-sm font-normal text-slate-500">/ 100</span></div>
+          <div class="text-xs text-slate-500 mt-2 flex items-center gap-1">
+            <span class="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">Kategori Cukup</span>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Konsistensi CRS & BBOX</div>
+          <div class="text-3xl font-extrabold text-emerald-600" id="kpi-crs-rate">75%</div>
+          <div class="text-xs text-slate-500 mt-2 flex items-center gap-1">
+            <span class="text-slate-600 font-medium">9 dari 12 sampel valid</span>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Kategori Paling Minim</div>
+          <div class="text-xl font-bold text-rose-600 truncate" id="kpi-lowest-cat">Processing Info</div>
+          <div class="text-xs text-slate-500 mt-2 flex items-center gap-1">
+            <span class="text-rose-600 font-medium"><i class="fa-solid fa-triangle-exclamation"></i> Lineage</span> paling sering hilang
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <h3 class="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
+            <span><i class="fa-solid fa-chart-radar text-sky-500 mr-2"></i> Profil Rata-Rata 8 Kategori MQI</span>
+            <span class="text-xs font-normal text-slate-500">Skala 0-100</span>
+          </h3>
+          <div class="h-64 flex items-center justify-center">
+            <canvas id="chart-radar-aggregate"></canvas>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <h3 class="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
+            <span><i class="fa-solid fa-chart-bar text-sky-500 mr-2"></i> Perbandingan Skor Menurut Tema Data</span>
+            <span class="text-xs font-normal text-slate-500">Sampel Purposif</span>
+          </h3>
+          <div class="h-64 flex items-center justify-center">
+            <canvas id="chart-bar-theme"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-5 border-b border-slate-200 flex flex-col md:flex-row justify-between md:items-center gap-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Inventaris Sampel Dataset Kelautan</h3>
+            <p class="text-xs text-slate-500">Daftar sampel dataset yang diaudit dari portal publik</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <select id="filter-theme" onchange="applyTableFilter()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
+              <option value="ALL">Semua Tema</option>
+              <option value="Mangrove">Mangrove</option>
+              <option value="Batimetri">Batimetri</option>
+              <option value="Padang Lamun">Padang Lamun</option>
+              <option value="Garis Pantai">Garis Pantai</option>
+              <option value="RZWP-3-K">RZWP-3-K</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <th class="p-3">Kode ID</th>
+                <th class="p-3">Judul Dataset</th>
+                <th class="p-3">Tema</th>
+                <th class="p-3">Penerbit / Portal</th>
+                <th class="p-3">Tahun</th>
+                <th class="p-3 text-center">Skor MQI</th>
+                <th class="p-3 text-center">Status</th>
+                <th class="p-3 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-table-body" class="divide-y divide-slate-100">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 2: AUDIT & MANUAL INPUT FORM -->
+    <div id="view-audit" class="hidden space-y-6">
+      <div class="bg-sky-900 text-white p-6 rounded-2xl shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
+        <div>
+          <span class="text-xs bg-sky-500/30 text-sky-200 px-2.5 py-1 rounded-full border border-sky-400/30 uppercase tracking-wide font-medium">Audit Metadata Real-Time</span>
+          <h2 class="text-xl font-bold mt-2" id="audit-title-header">Peta Sebaran Mangrove Kabupaten Demak (2023)</h2>
+          <p class="text-xs text-sky-200 mt-1" id="audit-subtitle-header">Instansi: Dinas Kelautan dan Perikanan Prov. Jateng | Kode: DS-MNG-DEMAK-01</p>
+        </div>
+
+        <div class="flex items-center space-x-3 w-full md:w-auto">
+          <select id="preset-selector" onchange="loadPresetDataset(this.value)" class="bg-slate-800 text-white text-xs border border-sky-500/50 rounded-lg px-3 py-2.5 w-full md:w-64">
+          </select>
+          <button onclick="resetToBlankForm()" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2.5 rounded-lg border border-white/20 whitespace-nowrap transition">
+            <i class="fa-solid fa-file-circle-plus mr-1"></i> Form Kosong
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Form & Checklist -->
+        <div class="lg:col-span-7 space-y-6">
+          <div class="bg-white p-4 rounded-xl border-2 border-dashed border-sky-300 bg-sky-50/50 hover:bg-sky-50 transition text-center no-print">
+            <input type="file" id="xml-file-input" accept=".xml,.json,.geojson" onchange="handleFileUpload(event)" class="hidden">
+            <label for="xml-file-input" class="cursor-pointer block">
+              <i class="fa-solid fa-cloud-arrow-up text-sky-600 text-2xl mb-1"></i>
+              <div class="text-xs font-semibold text-slate-800">Unggah Berkas Metadata (.XML ISO 19115 / .GeoJSON)</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">Sistem mengekstrak struktur tag ISO 19115 secara presisi</div>
+            </label>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <h3 class="text-sm font-bold text-slate-900 border-b pb-2 flex items-center justify-between">
+              <span><i class="fa-solid fa-pen-to-square text-sky-600 mr-2"></i> Pengisian Parameter Metadata Manual</span>
+              <span class="text-[11px] font-normal text-sky-600 bg-sky-50 px-2 py-0.5 rounded"><i class="fa-solid fa-bolt"></i> Auto-Sync Skor</span>
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div class="md:col-span-2">
+                <label class="font-semibold text-slate-700 block mb-1">Judul Dataset (INFO_01)</label>
+                <input type="text" id="manual-title" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+
+              <div>
+                <label class="font-semibold text-slate-700 block mb-1">Penerbit / Instansi (CONT_01)</label>
+                <input type="text" id="manual-publisher" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+
+              <div>
+                <label class="font-semibold text-slate-700 block mb-1">Email Kontak (CONT_02)</label>
+                <input type="email" id="manual-email" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="font-semibold text-slate-700 block mb-1">Abstrak / Deskripsi Dataset (DESC_01)</label>
+                <textarea id="manual-abstract" rows="2" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none"></textarea>
+              </div>
+
+              <div>
+                <label class="font-semibold text-slate-700 block mb-1">Sistem Referensi Koordinat / CRS (INFO_02)</label>
+                <input type="text" id="manual-crs" oninput="triggerManualAudit()" placeholder="Contoh: EPSG:4326 (WGS 84)" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+
+              <div>
+                <label class="font-semibold text-slate-700 block mb-1">Skala / Resolusi Spasial (ACC_01)</label>
+                <input type="text" id="manual-scale" oninput="triggerManualAudit()" placeholder="Contoh: 1:25.000 atau 10m" class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+
+              <div class="md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div class="flex justify-between items-center mb-1">
+                  <label class="font-semibold text-slate-700 block">BBOX Koordinat Spasial (EXT_01)</label>
+                  <span id="bbox-validation-msg" class="text-[10px] font-bold text-slate-500"></span>
+                </div>
+                <div class="grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <span class="text-[10px] text-slate-500">Bujur Barat (W)</span>
+                    <input type="number" step="0.01" id="bbox-west" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded p-1 text-center font-mono">
+                  </div>
+                  <div>
+                    <span class="text-[10px] text-slate-500">Bujur Timur (E)</span>
+                    <input type="number" step="0.01" id="bbox-east" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded p-1 text-center font-mono">
+                  </div>
+                  <div>
+                    <span class="text-[10px] text-slate-500">Lintang Selatan (S)</span>
+                    <input type="number" step="0.01" id="bbox-south" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded p-1 text-center font-mono">
+                  </div>
+                  <div>
+                    <span class="text-[10px] text-slate-500">Lintang Utara (N)</span>
+                    <input type="number" step="0.01" id="bbox-north" oninput="triggerManualAudit()" class="w-full border border-slate-300 rounded p-1 text-center font-mono">
+                  </div>
+                </div>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="font-semibold text-slate-700 block mb-1">Riwayat Pemrosesan / Lineage (PROC_01)</label>
+                <textarea id="manual-lineage" rows="2" oninput="triggerManualAudit()" placeholder="Jelaskan metode akuisisi citra, survei lapangan, atau metode pengolahan data..." class="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 focus:outline-none"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+              <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                <i class="fa-solid fa-list-check text-sky-600 mr-2"></i> Evaluasi Checklist 15 Elemen Metadata
+              </h3>
+              <span class="text-[11px] text-slate-500">Toggle status untuk penyesuaian</span>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-100/70 text-slate-600 font-semibold border-b">
+                    <th class="p-2.5">Kode</th>
+                    <th class="p-2.5">Nama Elemen Metadata</th>
+                    <th class="p-2.5">Kategori MQI</th>
+                    <th class="p-2.5 text-center">Bobot ($w_i$)</th>
+                    <th class="p-2.5 text-center">Status Elemen</th>
+                  </tr>
+                </thead>
+                <tbody id="checklist-table-body" class="divide-y divide-slate-100">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Scores & Map -->
+        <div class="lg:col-span-5 space-y-6">
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-center relative overflow-hidden">
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Skor Kelengkapan Metadata (MQI)</div>
+            
+            <div class="flex items-center justify-center space-x-2 my-2">
+              <span class="text-5xl font-black text-slate-900" id="score-display">0</span>
+              <span class="text-xl text-slate-400 font-bold">/ 100</span>
+            </div>
+
+            <div class="inline-block px-3 py-1 rounded-full text-xs font-bold my-1" id="score-badge">
+              Calculating...
+            </div>
+
+            <p class="text-[11px] text-slate-500 mt-2" id="score-formula-note">
+              Formulasi: $S = 100 \times \frac{\sum w_i x_i}{\sum w_i}$ (Elemen N/A dikeluarkan dari pembagi)
+            </p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+              <i class="fa-solid fa-chart-pie text-sky-600 mr-2"></i> Profil Kategori Dataset Ini
+            </h3>
+            <div class="h-56 flex items-center justify-center">
+              <canvas id="chart-radar-single"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                <i class="fa-solid fa-map-location-dot text-sky-600 mr-2"></i> Verifikasi Spasial & CRS
+              </h3>
+              <span id="crs-status-badge" class="text-[10px] px-2 py-0.5 rounded font-semibold bg-emerald-100 text-emerald-800">
+                CRS Valid
+              </span>
+            </div>
+
+            <div id="map"></div>
+
+            <div class="mt-3 h-36">
+              <canvas id="chart-spatial-crs"></canvas>
+            </div>
+
+            <div class="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded border border-slate-200 flex items-start gap-2">
+              <i class="fa-solid fa-circle-info text-sky-600 mt-0.5"></i>
+              <div>
+                <strong>Koordinat Terdeteksi:</strong> <span id="map-coord-text" class="font-mono">108.83E to 111.67E, -7.15S to -6.40S</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center justify-between">
+              <span><i class="fa-solid fa-rectangle-list text-amber-500 mr-2"></i> Prioritas Rekomendasi Perbaikan</span>
+              <span class="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-semibold" id="action-plan-count">0 Isu</span>
+            </h3>
+
+            <div id="action-plan-list" class="space-y-2 text-xs max-h-60 overflow-y-auto pr-1">
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- VIEW 3: SETTINGS -->
+    <div id="view-settings" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-3xl mx-auto space-y-6">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-sliders text-sky-600"></i> Pengaturan Bobot Elemen MQI
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">
+            Sesuaikan bobot ($w_i$) untuk setiap elemen metadata sesuai preferensi analisis audit. Perubahan bobot akan langsung memperbarui kalkulasi skor MQI secara global.
+          </p>
+        </div>
+
+        <div class="space-y-4 text-xs" id="weight-settings-list">
+        </div>
+
+        <div class="pt-4 border-t flex justify-between items-center">
+          <button onclick="resetDefaultWeights()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium transition">
+            Kembalikan Bobot Standar MQI
+          </button>
+          <button onclick="switchTab('audit')" class="bg-sky-600 hover:bg-sky-500 text-white px-5 py-2 rounded-lg font-medium transition">
+            Terapkan & Kembali ke Audit
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL METODOLOGI PENELITIAN -->
+  <div id="methodology-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b pb-3">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-book-bookmark text-sky-600"></i> Landasan Teori & Metodologi KOMPAS
+        </h3>
+        <button onclick="toggleMethodologyModal(false)" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-600 space-y-3 leading-relaxed">
+        <p><strong>1. Acuan Standar Geospasial:</strong> KOMPAS mengacu pada Peraturan Badan Informasi Geospasial (BIG) Nomor 3 Tahun 2023 tentang SNI Metadata Geospasial dan ISO 19115-1:2014.</p>
+        <p><strong>2. Kerangka Metadata Quality Index (MQI):</strong> Mengadaptasi kerangka Hasara & Karunanayaka (2026) yang membagi kriteria penilaian ke dalam 8 Kategori: General Info, Identification, Description, Extent, Accuracy, Contact, Meta-metadata, dan Processing Info.</p>
+        <p><strong>3. Formula Pembobotan Transparan:</strong>
+          <br>
+          <code class="block bg-slate-100 p-2 rounded text-slate-800 font-mono my-1">S = 100 * Σ(w_i * x_i) / Σ(w_i)</code>
+          Di mana <i>x_i</i> = 1 jika elemen ditemukan, <i>x_i</i> = 0 jika tidak ada. Elemen bertanda N/A (tidak berlaku) dikeluarkan dari pembagi Σ(w_i).
+        </p>
+        <p><strong>4. Klasifikasi Kategori Kualitas:</strong>
+          <ul class="list-disc pl-5 space-y-0.5 mt-1">
+            <li><strong>Sangat Baik:</strong> Skor ≥ 85</li>
+            <li><strong>Baik:</strong> Skor 70 - 84</li>
+            <li><strong>Cukup:</strong> Skor 50 - 69</li>
+            <li><strong>Kurang:</strong> Skor &lt; 50</li>
+          </ul>
+        </p>
+      </div>
+
+      <div class="pt-3 border-t text-right">
+        <button onclick="toggleMethodologyModal(false)" class="bg-sky-600 text-white text-xs px-4 py-2 rounded-lg font-medium">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 no-print mt-auto">
+    <div class="max-w-7xl mx-auto px-4">
+      KOMPAS Prototype &copy; 2026 - Berdasarkan Standar SNI ISO 19115 & Peraturan BIG No. 3 Tahun 2023.
+    </div>
+  </footer>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    const MQI_CATEGORIES = {
+      INFO: 'General Information',
+      ID: 'Identification',
+      DESC: 'Description',
+      EXT: 'Extent',
+      ACC: 'Accuracy Parameters',
+      CONT: 'Point of Contact',
+      META: 'Meta-metadata',
+      PROC: 'Processing Information'
+    };
+
+    const CHECKLIST_MASTER = [
+      { id: 'INFO_01', name: 'Judul Dataset (Dataset Title)', category: 'INFO', weight: 3, def: 'Wajib ada nama resmi dataset.' },
+      { id: 'INFO_02', name: 'Sistem Referensi Koordinat (CRS)', category: 'INFO', weight: 2.5, def: 'Wajib mencantumkan EPSG/CRS.' },
+      { id: 'ID_01', name: 'Tanggal Pembuatan / Publikasi', category: 'ID', weight: 2, def: 'Tanggal/tahun rilis data.' },
+      { id: 'ID_02', name: 'Tipe / Format Sumber Daya', category: 'ID', weight: 1.5, def: 'Format berkas (Vector/Raster/GeoTIFF).' },
+      { id: 'DESC_01', name: 'Abstrak / Uraian Deskripsi', category: 'DESC', weight: 2.5, def: 'Penjelasan tujuan & deskripsi data.' },
+      { id: 'DESC_02', name: 'Kata Kunci (Keywords)', category: 'DESC', weight: 1.5, def: 'Tag pencarian geospasial.' },
+      { id: 'EXT_01', name: 'Cakupan Spasial (BBOX Bounding Box)', category: 'EXT', weight: 3, def: 'Koordinat batas barat, timur, selatan, utara.' },
+      { id: 'EXT_02', name: 'Cakupan Temporal (Periode Waktu)', category: 'EXT', weight: 2, def: 'Rentang tanggal akuisisi/survei.' },
+      { id: 'ACC_01', name: 'Ketelitian Spasial / Skala Peta', category: 'ACC', weight: 2.5, def: 'Skala peta atau resolusi spasial citra.' },
+      { id: 'ACC_02', name: 'Resolusi Tematik / Kategori Aksesi', category: 'ACC', weight: 1.5, def: 'Tingkat kedalaman kelas atribut.' },
+      { id: 'CONT_01', name: 'Nama Instansi / Penanggung Jawab', category: 'CONT', weight: 2, def: 'Produsen/penerbit data.' },
+      { id: 'CONT_02', name: 'Email / Informasi Kontak', category: 'CONT', weight: 2, def: 'Alamat email yang dapat dihubungi.' },
+      { id: 'META_01', name: 'Tanggal Dokumen Metadata Dibuat', category: 'META', weight: 1, def: 'Waktu penyusunan rekaman metadata.' },
+      { id: 'META_02', name: 'Bahasa Dokumen Metadata', category: 'META', weight: 1, def: 'Bahasa pengantar metadata.' },
+      { id: 'PROC_01', name: 'Riwayat Pemrosesan (Lineage)', category: 'PROC', weight: 3, def: 'Penjelasan proses & asal-usul data.' }
+    ];
+
+    let currentWeights = {};
+    CHECKLIST_MASTER.forEach(item => { currentWeights[item.id] = item.weight; });
+
+    let DATASETS_PRESET = [
+      {
+        id: 'DS-MNG-DEMAK-01',
+        title: 'Peta Sebaran Mangrove Kabupaten Demak (2023)',
+        theme: 'Mangrove',
+        publisher: 'Dinas Kelautan & Perikanan Prov. Jateng',
+        portal: 'Ina-Geoportal',
+        year: 2023,
+        email: 'dkp@jatengprov.go.id',
+        crs: 'EPSG:4326 (WGS 84)',
+        scale: '1:25.000',
+        abstract: 'Dataset sebaran dan kerapatan tutupan vegetasi mangrove di pesisir Kabupaten Demak berdasarkan klasifikasi citra Sentinel-2A.',
+        lineage: 'Klasifikasi terbimbing citra Sentinel-2A perekaman 2023 diikuti dengan validasi survei cek lapangan.',
+        bbox: { west: 110.43, east: 110.78, south: -6.97, north: -6.75 },
+        checklist: {
+          INFO_01: 1, INFO_02: 1, ID_01: 1, ID_02: 1, DESC_01: 1, DESC_02: 1,
+          EXT_01: 1, EXT_02: 1, ACC_01: 1, ACC_02: 1, CONT_01: 1, CONT_02: 1,
+          META_01: 1, META_02: 1, PROC_01: 1
+        }
+      },
+      {
+        id: 'DS-BAT-PATI-02',
+        title: 'Data Batimetri Perairan Laut Pati (2022)',
+        theme: 'Batimetri',
+        publisher: 'Dishidros / Pushidrosal',
+        portal: 'Portal KKP',
+        year: 2022,
+        email: 'info@pushidrosal.id',
+        crs: 'EPSG:32749 (UTM Zone 49S)',
+        scale: '1:50.000',
+        abstract: 'Peta kedalaman laut perairan Laut Jawa bagian utara Pati.',
+        lineage: 'Pemeruman pemeroman Singlebeam Echosounder (SBES).',
+        bbox: { west: 111.00, east: 111.35, south: -6.60, north: -6.30 },
+        checklist: {
+          INFO_01: 1, INFO_02: 1, ID_01: 1, ID_02: 1, DESC_01: 1, DESC_02: 0,
+          EXT_01: 1, EXT_02: 1, ACC_01: 1, ACC_02: 0, CONT_01: 1, CONT_02: 1,
+          META_01: 1, META_02: 1, PROC_01: 1
+        }
+      },
+      {
+        id: 'DS-LAM-JEPARA-03',
+        title: 'Pemetaan Padang Lamun Jepara (2021)',
+        theme: 'Padang Lamun',
+        publisher: 'Pusat Penelitian Oseanografi BRIN',
+        portal: 'Ina-Geoportal',
+        year: 2021,
+        email: 'oceanografi@brin.go.id',
+        crs: 'EPSG:4326 (WGS 84)',
+        scale: '1:10.000',
+        abstract: 'Sebaran spesies lamun Enhalus acoroides di Teluk Awur Jepara.',
+        lineage: '',
+        bbox: { west: 110.63, east: 110.68, south: -6.62, north: -6.58 },
+        checklist: {
+          INFO_01: 1, INFO_02: 1, ID_01: 1, ID_02: 1, DESC_01: 1, DESC_02: 1,
+          EXT_01: 1, EXT_02: 0, ACC_01: 0, ACC_02: 0, CONT_01: 1, CONT_02: 0,
+          META_01: 0, META_02: 1, PROC_01: 0
+        }
+      },
+      {
+        id: 'DS-GPS-BREBES-04',
+        title: 'Garis Pantai Kabupaten Brebes (2020)',
+        theme: 'Garis Pantai',
+        publisher: 'Badan Informasi Geospasial (BIG)',
+        portal: 'Ina-Geoportal',
+        year: 2020,
+        email: 'info@big.go.id',
+        crs: 'EPSG:4326 (WGS 84)',
+        scale: '1:25.000',
+        abstract: 'Garis pantai pasang surut tertinggi pesisir Brebes.',
+        lineage: 'Delineasi pasut terendah dan tertinggi dari citra SPOT-6.',
+        bbox: { west: 108.83, east: 109.15, south: -6.85, north: -6.70 },
+        checklist: {
+          INFO_01: 1, INFO_02: 1, ID_01: 1, ID_02: 1, DESC_01: 1, DESC_02: 1,
+          EXT_01: 1, EXT_02: 1, ACC_01: 1, ACC_02: 1, CONT_01: 1, CONT_02: 1,
+          META_01: 1, META_02: 1, PROC_01: 1
+        }
+      },
+      {
+        id: 'DS-RZWP-JATENG-05',
+        title: 'Rencana Zonasi RZWP-3-K Jawa Tengah (2021)',
+        theme: 'RZWP-3-K',
+        publisher: 'Bappeda Prov. Jawa Tengah',
+        portal: 'Portal Pemprov',
+        year: 2021,
+        email: 'bappeda@jatengprov.go.id',
+        crs: 'EPSG:4326 (WGS 84)',
+        scale: '1:50.000',
+        abstract: 'Peta alokasi ruang perairan pesisir dan pulau-pulau kecil Jawa Tengah.',
+        lineage: 'Penyusunan peta zonasi berdasarkan Perda RZWP-3-K.',
+        bbox: { west: 108.50, east: 111.80, south: -7.20, north: -6.30 },
+        checklist: {
+          INFO_01: 1, INFO_02: 1, ID_01: 1, ID_02: 1, DESC_01: 1, DESC_02: 0,
+          EXT_01: 1, EXT_02: 0, ACC_01: 1, ACC_02: 0, CONT_01: 1, CONT_02: 0,
+          META_01: 0, META_02: 1, PROC_01: 0
+        }
+      }
+    ];
+
+    for (let i = 6; i <= 12; i++) {
+      let base = DATASETS_PRESET[(i - 1) % 5];
+      DATASETS_PRESET.push({
+        ...base,
+        id: `DS-SAMPLE-${i < 10 ? '0' + i : i}`,
+        title: `${base.theme} Wilayah Pesisir Sample #${i}`,
+        year: 2018 + (i % 6),
+        checklist: { ...base.checklist, PROC_01: i % 2 === 0 ? 1 : 0, ACC_01: i % 3 === 0 ? 0 : 1 }
+      });
+    }
+
+    let currentActiveDataset = null;
+    let leafletMap = null;
+    let mapBBoxLayer = null;
+    let radarChartSingle = null;
+    let radarChartAggregate = null;
+    let barChartTheme = null;
+    let spatialCrsChart = null;
+
+    function calculateMQIScore(checklist, weights = currentWeights) {
+      let weightedSum = 0;
+      let totalWeight = 0;
+
+      Object.keys(checklist).forEach(key => {
+        const status = checklist[key];
+        if (status !== -1) {
+          const w = weights[key] || 1;
+          weightedSum += status * w;
+          totalWeight += w;
+        }
+      });
+
+      if (totalWeight === 0) return 0;
+      return Math.round((weightedSum / totalWeight) * 100);
+    }
+
+    function calculateCategoryScores(checklist) {
+      const catScores = {};
+      Object.keys(MQI_CATEGORIES).forEach(cat => {
+        const items = CHECKLIST_MASTER.filter(m => m.category === cat);
+        let sum = 0;
+        let count = 0;
+
+        items.forEach(item => {
+          const st = checklist[item.id];
+          if (st !== -1 && st !== undefined) {
+            sum += st;
+            count++;
+          }
+        });
+
+        catScores[cat] = count > 0 ? Math.round((sum / count) * 100) : null;
+      });
+      return catScores;
+    }
+
+    function getScoreBadge(score) {
+      if (score >= 85) return { text: 'Sangat Baik', class: 'bg-emerald-100 text-emerald-800 border border-emerald-300' };
+      if (score >= 70) return { text: 'Baik', class: 'bg-sky-100 text-sky-800 border border-sky-300' };
+      if (score >= 50) return { text: 'Cukup', class: 'bg-amber-100 text-amber-800 border border-amber-300' };
+      return { text: 'Kurang', class: 'bg-rose-100 text-rose-800 border border-rose-300' };
+    }
+
+    function switchTab(tabName) {
+      ['dashboard', 'audit', 'settings'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.add('hidden');
+        document.getElementById(`tab-${t}`).classList.remove('nav-active');
+        document.getElementById(`tab-${t}`).classList.add('text-slate-500');
+      });
+
+      document.getElementById(`view-${tabName}`).classList.remove('hidden');
+      document.getElementById(`tab-${tabName}`).classList.add('nav-active');
+      document.getElementById(`tab-${tabName}`).classList.remove('text-slate-500');
+
+      if (tabName === 'audit' && leafletMap) {
+        setTimeout(() => leafletMap.invalidateSize(), 200);
+      }
+    }
+
+    function toggleMethodologyModal(show) {
+      const modal = document.getElementById('methodology-modal');
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSettingsList();
+      populatePresetSelector();
+      renderDashboardInventory();
+      renderAggregateCharts();
+      initLeafletMap();
+
+      loadPresetDataset(DATASETS_PRESET[0].id);
+    });
+
+    function triggerManualAudit() {
+      if (!currentActiveDataset) return;
+
+      const title = document.getElementById('manual-title').value.trim();
+      const publisher = document.getElementById('manual-publisher').value.trim();
+      const email = document.getElementById('manual-email').value.trim();
+      const abstract = document.getElementById('manual-abstract').value.trim();
+      const crs = document.getElementById('manual-crs').value.trim();
+      const scale = document.getElementById('manual-scale').value.trim();
+      const lineage = document.getElementById('manual-lineage').value.trim();
+
+      const west = parseFloat(document.getElementById('bbox-west').value);
+      const east = parseFloat(document.getElementById('bbox-east').value);
+      const south = parseFloat(document.getElementById('bbox-south').value);
+      const north = parseFloat(document.getElementById('bbox-north').value);
+
+      currentActiveDataset.checklist['INFO_01'] = title.length > 0 ? 1 : 0;
+      currentActiveDataset.checklist['CONT_01'] = publisher.length > 0 ? 1 : 0;
+      currentActiveDataset.checklist['CONT_02'] = email.length > 0 ? 1 : 0;
+      currentActiveDataset.checklist['DESC_01'] = abstract.length > 10 ? 1 : 0;
+      currentActiveDataset.checklist['INFO_02'] = crs.length > 0 ? 1 : 0;
+      currentActiveDataset.checklist['ACC_01'] = scale.length > 0 ? 1 : 0;
+      currentActiveDataset.checklist['PROC_01'] = lineage.length > 0 ? 1 : 0;
+
+      const validBBox = !isNaN(west) && !isNaN(east) && !isNaN(south) && !isNaN(north);
+      currentActiveDataset.checklist['EXT_01'] = validBBox ? 1 : 0;
+
+      // VALIDASI GEOGRAFIS INDONESIA
+      const bboxMsg = document.getElementById('bbox-validation-msg');
+      if (validBBox) {
+        currentActiveDataset.bbox = { west, east, south, north };
+        if (west >= 95.0 && east <= 141.0 && south >= -11.0 && north <= 6.0) {
+          bboxMsg.innerText = '✓ Wilayah Indonesia';
+          bboxMsg.className = 'text-[10px] font-bold text-emerald-600';
+        } else {
+          bboxMsg.innerText = '⚠ Di luar Batas NKRI';
+          bboxMsg.className = 'text-[10px] font-bold text-amber-600';
+        }
+      } else {
+        bboxMsg.innerText = '⚠ BBOX Belum Lengkap';
+        bboxMsg.className = 'text-[10px] font-bold text-rose-500';
+      }
+
+      currentActiveDataset.title = title || 'Dataset Tanpa Judul';
+      currentActiveDataset.publisher = publisher || '-';
+      currentActiveDataset.crs = crs;
+
+      refreshAuditResultsUI();
+    }
+
+    function toggleChecklistItem(elemId, statusValue) {
+      if (!currentActiveDataset) return;
+      currentActiveDataset.checklist[elemId] = parseInt(statusValue);
+      refreshAuditResultsUI();
+    }
+
+    function refreshAuditResultsUI() {
+      const score = calculateMQIScore(currentActiveDataset.checklist);
+      currentActiveDataset.score = score;
+
+      document.getElementById('audit-title-header').innerText = currentActiveDataset.title;
+      document.getElementById('audit-subtitle-header').innerText = `Instansi: ${currentActiveDataset.publisher} | Kode: ${currentActiveDataset.id}`;
+
+      document.getElementById('score-display').innerText = score;
+      const badge = getScoreBadge(score);
+      const badgeElem = document.getElementById('score-badge');
+      badgeElem.innerText = badge.text;
+      badgeElem.className = `inline-block px-3 py-1 rounded-full text-xs font-bold my-1 ${badge.class}`;
+
+      renderChecklistTable();
+      renderSingleRadarChart();
+      renderSpatialCrsChart();
+      updateMapBBox();
+      renderPriorityActionPlan();
+    }
+
+    function renderSpatialCrsChart() {
+      const ctx = document.getElementById('chart-spatial-crs');
+      if (!ctx) return;
+
+      const bboxValid = currentActiveDataset && currentActiveDataset.bbox && !isNaN(currentActiveDataset.bbox.west) && !isNaN(currentActiveDataset.bbox.east) && !isNaN(currentActiveDataset.bbox.south) && !isNaN(currentActiveDataset.bbox.north);
+      const crsValid = currentActiveDataset && currentActiveDataset.crs && (currentActiveDataset.crs.includes('4326') || currentActiveDataset.crs.includes('WGS') || currentActiveDataset.crs.includes('327'));
+      const inIndonesia = bboxValid && currentActiveDataset.bbox.west >= 95 && currentActiveDataset.bbox.east <= 141 && currentActiveDataset.bbox.south >= -11 && currentActiveDataset.bbox.north <= 6;
+
+      const data = {
+        labels: ['BBox Lengkap', 'CRS Valid', 'Dalam NKRI', 'Perlu Verifikasi'],
+        datasets: [{
+          label: 'Status Verifikasi',
+          data: [bboxValid ? 100 : 0, crsValid ? 100 : 0, inIndonesia ? 100 : 0, (!bboxValid || !crsValid || !inIndonesia) ? 100 : 0],
+          backgroundColor: [
+            bboxValid ? '#22c55e' : '#fca5a5',
+            crsValid ? '#22c55e' : '#fca5a5',
+            inIndonesia ? '#38bdf8' : '#fbbf24',
+            (!bboxValid || !crsValid || !inIndonesia) ? '#f59e0b' : '#22c55e'
+          ],
+          borderRadius: 8
+        }]
+      };
+
+      if (spatialCrsChart) spatialCrsChart.destroy();
+
+      spatialCrsChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { max: 100, ticks: { callback: value => value + '%' } },
+            y: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderChecklistTable() {
+      const tbody = document.getElementById('checklist-table-body');
+      tbody.innerHTML = '';
+
+      CHECKLIST_MASTER.forEach(item => {
+        const status = currentActiveDataset.checklist[item.id] !== undefined ? currentActiveDataset.checklist[item.id] : 0;
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition border-b border-slate-100';
+
+        tr.innerHTML = `
+          <td class="p-2.5 font-mono text-[11px] text-slate-500">${item.id}</td>
+          <td class="p-2.5">
+            <div class="font-medium text-slate-800">${item.name}</div>
+            <div class="text-[10px] text-slate-400">${item.def}</div>
+          </td>
+          <td class="p-2.5">
+            <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">${MQI_CATEGORIES[item.category]}</span>
+          </td>
+          <td class="p-2.5 text-center font-semibold text-slate-700">${currentWeights[item.id]}</td>
+          <td class="p-2.5 text-center">
+            <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px]">
+              <button onclick="toggleChecklistItem('${item.id}', 1)" class="px-2 py-1 rounded-md font-medium transition ${status === 1 ? 'bg-emerald-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">Ada</button>
+              <button onclick="toggleChecklistItem('${item.id}', 0)" class="px-2 py-1 rounded-md font-medium transition ${status === 0 ? 'bg-rose-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">Tidak</button>
+              <button onclick="toggleChecklistItem('${item.id}', -1)" class="px-2 py-1 rounded-md font-medium transition ${status === -1 ? 'bg-amber-500 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">N/A</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderPriorityActionPlan() {
+      const container = document.getElementById('action-plan-list');
+      container.innerHTML = '';
+
+      const missingItems = CHECKLIST_MASTER.filter(item => currentActiveDataset.checklist[item.id] === 0);
+      document.getElementById('action-plan-count').innerText = `${missingItems.length} Isu`;
+
+      if (missingItems.length === 0) {
+        container.innerHTML = `<div class="p-3 bg-emerald-50 text-emerald-800 rounded-lg text-center">Dokumen metadata lengkap! Seluruh elemen terpenuhi.</div>`;
+        return;
+      }
+
+      missingItems.sort((a, b) => currentWeights[b.id] - currentWeights[a.id]);
+
+      missingItems.forEach(item => {
+        const weight = currentWeights[item.id];
+        let priorityBadge = weight >= 2.5 
+          ? '<span class="text-[9px] bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold">HIGH</span>' 
+          : '<span class="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">MED</span>';
+
+        const div = document.createElement('div');
+        div.className = 'p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between gap-2';
+        div.innerHTML = `
+          <div>
+            <div class="font-semibold text-slate-800 flex items-center gap-1.5">
+              ${priorityBadge} <span>Lengkapi ${item.name}</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-0.5">${item.def}</p>
+          </div>
+          <button onclick="toggleChecklistItem('${item.id}', 1)" class="text-[10px] text-sky-600 font-semibold hover:underline whitespace-nowrap">Tandai Ada</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function initLeafletMap() {
+      if (leafletMap) return;
+      leafletMap = L.map('map').setView([-6.80, 110.50], 9);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(leafletMap);
+    }
+
+    function updateMapBBox() {
+      if (!leafletMap) return;
+
+      const bbox = currentActiveDataset.bbox;
+      const textCoord = document.getElementById('map-coord-text');
+      const crsBadge = document.getElementById('crs-status-badge');
+
+      if (!bbox || isNaN(bbox.west) || isNaN(bbox.east)) {
+        textCoord.innerText = 'BBOX tidak valid / tidak ditemukan';
+        crsBadge.className = 'text-[10px] px-2 py-0.5 rounded font-semibold bg-rose-100 text-rose-800';
+        crsBadge.innerText = 'CRS / BBOX Hilang';
+        if (mapBBoxLayer) leafletMap.removeLayer(mapBBoxLayer);
+        return;
+      }
+
+      textCoord.innerText = `${bbox.west}°E s/d ${bbox.east}°E, ${bbox.south}°S s/d ${bbox.north}°S`;
+      
+      if (currentActiveDataset.crs && (currentActiveDataset.crs.includes('4326') || currentActiveDataset.crs.includes('WGS'))) {
+        crsBadge.className = 'text-[10px] px-2 py-0.5 rounded font-semibold bg-emerald-100 text-emerald-800';
+        crsBadge.innerText = 'CRS Valid (EPSG:4326)';
+      } else {
+        crsBadge.className = 'text-[10px] px-2 py-0.5 rounded font-semibold bg-amber-100 text-amber-800';
+        crsBadge.innerText = 'CRS Perlu Verifikasi';
+      }
+
+      const bounds = [[bbox.south, bbox.west], [bbox.north, bbox.east]];
+
+      if (mapBBoxLayer) leafletMap.removeLayer(mapBBoxLayer);
+      mapBBoxLayer = L.rectangle(bounds, { color: "#0284c7", weight: 2, fillOpacity: 0.2 }).addTo(leafletMap);
+      leafletMap.fitBounds(bounds, { padding: [20, 20] });
+    }
+
+    function renderSingleRadarChart() {
+      const ctx = document.getElementById('chart-radar-single').getContext('2d');
+      const catScores = calculateCategoryScores(currentActiveDataset.checklist);
+
+      const labels = Object.keys(MQI_CATEGORIES).map(k => MQI_CATEGORIES[k]);
+      const dataValues = Object.keys(MQI_CATEGORIES).map(k => catScores[k] !== null ? catScores[k] : 0);
+
+      if (radarChartSingle) radarChartSingle.destroy();
+
+      radarChartSingle = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Kelengkapan %',
+            data: dataValues,
+            backgroundColor: 'rgba(2, 132, 199, 0.2)',
+            borderColor: '#0284c7',
+            pointBackgroundColor: '#0284c7'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { r: { min: 0, max: 100, ticks: { stepSize: 25 } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    function renderAggregateCharts() {
+      const ctxRadar = document.getElementById('chart-radar-aggregate').getContext('2d');
+      const catTotals = {};
+      Object.keys(MQI_CATEGORIES).forEach(k => catTotals[k] = 0);
+
+      DATASETS_PRESET.forEach(ds => {
+        const catScores = calculateCategoryScores(ds.checklist);
+        Object.keys(MQI_CATEGORIES).forEach(k => {
+          catTotals[k] += catScores[k] || 0;
+        });
+      });
+
+      const avgData = Object.keys(MQI_CATEGORIES).map(k => Math.round(catTotals[k] / DATASETS_PRESET.length));
+
+      if (radarChartAggregate) radarChartAggregate.destroy();
+      radarChartAggregate = new Chart(ctxRadar, {
+        type: 'radar',
+        data: {
+          labels: Object.keys(MQI_CATEGORIES).map(k => MQI_CATEGORIES[k]),
+          datasets: [{
+            label: 'Rata-Rata Sampel %',
+            data: avgData,
+            backgroundColor: 'rgba(16, 185, 129, 0.2)',
+            borderColor: '#10b981',
+            pointBackgroundColor: '#10b981'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { r: { min: 0, max: 100 } },
+          plugins: { legend: { display: false } }
+        }
+      });
+
+      const ctxBar = document.getElementById('chart-bar-theme').getContext('2d');
+      const themes = ['Mangrove', 'Batimetri', 'Padang Lamun', 'Garis Pantai', 'RZWP-3-K'];
+      const themeAvg = themes.map(t => {
+        const filtered = DATASETS_PRESET.filter(d => d.theme === t);
+        if (filtered.length === 0) return 0;
+        const sum = filtered.reduce((acc, d) => acc + calculateMQIScore(d.checklist), 0);
+        return Math.round(sum / filtered.length);
+      });
+
+      if (barChartTheme) barChartTheme.destroy();
+      barChartTheme = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels: themes,
+          datasets: [{
+            label: 'Rata-Rata Skor MQI',
+            data: themeAvg,
+            backgroundColor: '#0284c7',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { min: 0, max: 100 } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    function populatePresetSelector() {
+      const select = document.getElementById('preset-selector');
+      select.innerHTML = '';
+      DATASETS_PRESET.forEach(ds => {
+        const opt = document.createElement('option');
+        opt.value = ds.id;
+        opt.innerText = `${ds.theme}: ${ds.title.substring(0, 30)}...`;
+        select.appendChild(opt);
+      });
+    }
+
+    function loadPresetDataset(id) {
+      const found = DATASETS_PRESET.find(d => d.id === id);
+      if (!found) return;
+
+      currentActiveDataset = JSON.parse(JSON.stringify(found));
+
+      document.getElementById('manual-title').value = currentActiveDataset.title || '';
+      document.getElementById('manual-publisher').value = currentActiveDataset.publisher || '';
+      document.getElementById('manual-email').value = currentActiveDataset.email || '';
+      document.getElementById('manual-abstract').value = currentActiveDataset.abstract || '';
+      document.getElementById('manual-crs').value = currentActiveDataset.crs || '';
+      document.getElementById('manual-scale').value = currentActiveDataset.scale || '';
+      document.getElementById('manual-lineage').value = currentActiveDataset.lineage || '';
+
+      if (currentActiveDataset.bbox) {
+        document.getElementById('bbox-west').value = currentActiveDataset.bbox.west;
+        document.getElementById('bbox-east').value = currentActiveDataset.bbox.east;
+        document.getElementById('bbox-south').value = currentActiveDataset.bbox.south;
+        document.getElementById('bbox-north').value = currentActiveDataset.bbox.north;
+      }
+
+      refreshAuditResultsUI();
+    }
+
+    function resetToBlankForm() {
+      currentActiveDataset = {
+        id: `DS-CUSTOM-${Date.now().toString().slice(-4)}`,
+        title: 'Dataset Baru (Manual)',
+        publisher: '',
+        theme: 'Lainnya',
+        year: 2026,
+        email: '',
+        crs: '',
+        scale: '',
+        abstract: '',
+        lineage: '',
+        bbox: { west: 110.0, east: 110.5, south: -7.0, north: -6.5 },
+        checklist: {
+          INFO_01: 0, INFO_02: 0, ID_01: 0, ID_02: 0, DESC_01: 0, DESC_02: 0,
+          EXT_01: 0, EXT_02: 0, ACC_01: 0, ACC_02: 0, CONT_01: 0, CONT_02: 0,
+          META_01: 0, META_02: 0, PROC_01: 0
+        }
+      };
+
+      document.querySelectorAll('#view-audit input[type="text"], #view-audit input[type="email"], #view-audit textarea').forEach(i => i.value = '');
+      document.getElementById('manual-title').value = 'Dataset Baru (Manual)';
+      refreshAuditResultsUI();
+    }
+
+    // ADVANCED DOM PARSER FOR ISO 19115 XML
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        resetToBlankForm();
+
+        if (file.name.endsWith('.xml')) {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(content, "text/xml");
+
+          // Safe helper to find tag text regardless of namespace prefix
+          const getTagText = (tagName) => {
+            const el = xmlDoc.getElementsByTagName(tagName)[0] || xmlDoc.getElementsByTagName(`gmd:${tagName}`)[0];
+            return el ? el.textContent.trim() : '';
+          };
+
+          const extractedTitle = getTagText('title') || file.name.replace(/\.[^/.]+$/, "");
+          const extractedAbstract = getTagText('abstract');
+          const extractedLineage = getTagText('statement') || getTagText('lineage');
+          const extractedCRS = getTagText('code') || getTagText('referenceSystemIdentifier');
+
+          document.getElementById('manual-title').value = extractedTitle;
+          document.getElementById('manual-abstract').value = extractedAbstract;
+          document.getElementById('manual-lineage').value = extractedLineage;
+          document.getElementById('manual-crs').value = extractedCRS;
+
+          // Parse BBOX coordinates
+          const west = parseFloat(getTagText('westBoundLongitude'));
+          const east = parseFloat(getTagText('eastBoundLongitude'));
+          const south = parseFloat(getTagText('southBoundLatitude'));
+          const north = parseFloat(getTagText('northBoundLatitude'));
+
+          if (!isNaN(west)) document.getElementById('bbox-west').value = west;
+          if (!isNaN(east)) document.getElementById('bbox-east').value = east;
+          if (!isNaN(south)) document.getElementById('bbox-south').value = south;
+          if (!isNaN(north)) document.getElementById('bbox-north').value = north;
+
+          triggerManualAudit();
+          alert(`File XML "${file.name}" berhasil diekstrak dengan DOM Parser!`);
+        } else {
+          currentActiveDataset.title = file.name.replace(/\.[^/.]+$/, "");
+          document.getElementById('manual-title').value = currentActiveDataset.title;
+          triggerManualAudit();
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function initSettingsList() {
+      const container = document.getElementById('weight-settings-list');
+      container.innerHTML = '';
+
+      CHECKLIST_MASTER.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200';
+        div.innerHTML = `
+          <div>
+            <div class="font-semibold text-slate-800">${item.name} (${item.id})</div>
+            <div class="text-[10px] text-slate-500">${item.def}</div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-500 font-mono text-xs">Bobot:</span>
+            <input type="number" step="0.5" min="0.5" max="5" value="${currentWeights[item.id]}" onchange="updateWeight('${item.id}', this.value)" class="w-16 border border-slate-300 rounded p-1 text-center font-bold">
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function updateWeight(id, val) {
+      currentWeights[id] = parseFloat(val) || 1;
+      if (currentActiveDataset) refreshAuditResultsUI();
+      renderAggregateCharts();
+    }
+
+    function resetDefaultWeights() {
+      CHECKLIST_MASTER.forEach(item => { currentWeights[item.id] = item.weight; });
+      initSettingsList();
+      if (currentActiveDataset) refreshAuditResultsUI();
+      renderAggregateCharts();
+    }
+
+    function renderDashboardInventory() {
+      const tbody = document.getElementById('inventory-table-body');
+      tbody.innerHTML = '';
+
+      DATASETS_PRESET.forEach(ds => {
+        const score = calculateMQIScore(ds.checklist);
+        const badge = getScoreBadge(score);
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        tr.innerHTML = `
+          <td class="p-3 font-mono text-[11px] text-slate-500">${ds.id}</td>
+          <td class="p-3 font-medium text-slate-900">${ds.title}</td>
+          <td class="p-3"><span class="bg-sky-50 text-sky-700 px-2 py-0.5 rounded border border-sky-200">${ds.theme}</span></td>
+          <td class="p-3 text-slate-600">${ds.publisher}</td>
+          <td class="p-3 text-slate-500">${ds.year}</td>
+          <td class="p-3 text-center font-extrabold text-slate-900">${score}</td>
+          <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${badge.class}">${badge.text}</span></td>
+          <td class="p-3 text-center">
+            <button onclick="loadAndSwitchToAudit('${ds.id}')" class="text-sky-600 hover:text-sky-800 font-semibold text-[11px]">Audit <i class="fa-solid fa-arrow-right"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function applyTableFilter() {
+      const filter = document.getElementById('filter-theme').value;
+      const tbody = document.getElementById('inventory-table-body');
+      tbody.innerHTML = '';
+
+      const filtered = filter === 'ALL' ? DATASETS_PRESET : DATASETS_PRESET.filter(d => d.theme === filter);
+
+      filtered.forEach(ds => {
+        const score = calculateMQIScore(ds.checklist);
+        const badge = getScoreBadge(score);
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        tr.innerHTML = `
+          <td class="p-3 font-mono text-[11px] text-slate-500">${ds.id}</td>
+          <td class="p-3 font-medium text-slate-900">${ds.title}</td>
+          <td class="p-3"><span class="bg-sky-50 text-sky-700 px-2 py-0.5 rounded border border-sky-200">${ds.theme}</span></td>
+          <td class="p-3 text-slate-600">${ds.publisher}</td>
+          <td class="p-3 text-slate-500">${ds.year}</td>
+          <td class="p-3 text-center font-extrabold text-slate-900">${score}</td>
+          <td class="p-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${badge.class}">${badge.text}</span></td>
+          <td class="p-3 text-center">
+            <button onclick="loadAndSwitchToAudit('${ds.id}')" class="text-sky-600 hover:text-sky-800 font-semibold text-[11px]">Audit <i class="fa-solid fa-arrow-right"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function loadAndSwitchToAudit(id) {
+      document.getElementById('preset-selector').value = id;
+      loadPresetDataset(id);
+      switchTab('audit');
+    }
+
+    function exportJSONAudit() {
+      if (!currentActiveDataset) return;
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentActiveDataset, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `KOMPAS_Audit_${currentActiveDataset.id}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+  </script>
+</body>
+</html>
